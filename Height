@@ -1,0 +1,145 @@
+'v1.1 - Amended to prevent errors where maps with custom backgrounds are included
+
+Dim FileName
+Dim OutputFileName
+
+'**** INPUT FILENAME can be hard coded if the prompt doesn't work for you
+fileName = OpenFile()
+if fileName = "" then wscript.quit
+OutputFileName = left(fileName, len(fileName)-4) + " RESIZED.twb"
+
+if right(fileName,4) <> ".twb" then
+  msgbox "Only TWB files accepted.  If this is TWBX please first extract the TWB file",vbexclamation+vbokonly,"Not a TWB file"
+  wscript.quit
+end if
+
+
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set fr = fso.OpenTextFile(filename)
+
+
+'*** set variables ***
+
+Dim currentLine
+Dim newLine
+Dim currentHeight
+Dim sheetsCount
+Dim newHeight
+Dim currentPPP   'PPP = Points per pixel (tableau uses 100,000 x 100,000 grid regardless of sizes)
+Dim newPPP	'PPP = Points per pixel (tableau uses 100,000 x 100,000 grid regardless of sizes)
+Dim currentVal
+Dim newVal
+
+sheetsCount = 0
+
+
+'*** Find the current height ***
+Do Until fr.AtEndOfStream
+  currentLine = fr.ReadLine
+
+  if instr(currentLine, " maxheight='") > 0 then
+      currentHeight = mid(currentLine, instrrev(currentLine, " maxheight='")+12)
+      currentHeight = mid(currentHeight, 1, instr(currentHeight, "'")-1)
+      sheetsCount = sheetsCount +1
+  end if
+
+Loop
+
+fr.Close
+
+
+'*** if multiple dashboards warn user
+if sheetsCount > 1 then
+  if msgbox("Multiple dashboards detected.  All sheets will be resized to the same dimensions and must have been the same initial dimensions to work correctly." + CHR(13) + CHR(13) + "Continue?", vbyesno, sheetsCount & " sheets found - Continue?") <> vbyes then wscript.quit
+end if
+
+'*** CurrentHeight is now set ***
+
+'*** Prompt for new height ***
+newHeight = inputbox("Current Height is " + currentHeight + ".  What is the new height required?","Set new height")
+
+'*** Check that this is valid ***
+if isempty(newHeight) or not isnumeric(newHeight) then wscript.quit
+if newHeight <= 0 then wsctipt.quit
+
+'*** confirm update ***
+if msgbox("Height of dashboards in this workbook will be changed:" & chr(13) & chr(13) & "From:  " & currentHeight & chr(13) & "To:  " & newHeight & chr(13) & chr(13) & "Continue with the update?", vbYesNo, "Confirm Update") <> vbYes then wscript.quit
+
+
+'*** set transform values
+currentPPP = 100000 / currentHeight
+newPPP = 100000 / newHeight
+
+
+'*** read each line and transform the values.  Things to change are:
+'*** maxheight='#', minheight='#', h='#', y='#'
+
+'*** re-open the file
+Set fr = fso.OpenTextFile(filename)
+
+'*** and create a file for writing
+Set fw = fso.CreateTextFile(OutputFileName,True)
+
+Do Until fr.AtEndOfStream
+  currentLine = fr.ReadLine
+
+  newLine = currentLine
+
+  '*** Replace maxheight='#'
+  if instr(currentLine, " maxheight='") > 0 then
+      newLine = replace(newLine, " maxheight='" & currentHeight & "'", " maxheight='" & newHeight & "'")
+  end if
+
+  '*** Replace minheight='#'
+  if instr(currentLine, " minheight='") > 0 then
+      newLine = replace(newLine, " minheight='" & currentHeight & "'", " minheight='" & newHeight & "'")
+  end if
+
+  '*** Replace h='#'
+  if instr(newLine, " h='") > 0 then
+      '*** first get the current value before replacing
+      currentVal = mid(newLine, instrrev(newLine, " h='")+4)
+      currentVal = mid(currentVal, 1, instr(currentVal, "'")-1)
+
+      '***calculate the new value
+      newVal = round(currentVal / currentPPP * newPPP,0)
+
+      '*** now replace
+      newLine = replace(newLine, " h='" & currentVal & "'", " h='" & newval & "'")
+  end if
+
+
+  '*** Replace y='#'
+  if instr(newLine, " y='") > 0 and instr(newLine, " y='[") = 0 then
+
+
+      '*** first get the current value before replacing
+      currentVal = mid(newLine, instrrev(newLine, " y='")+4)
+      currentVal = mid(currentVal, 1, instr(currentVal, "'")-1)
+
+      '***calculate the new value
+      newVal = round(currentVal / currentPPP * newPPP,0)
+
+      '*** now replace
+      newLine = replace(newLine, " y='" & currentVal & "'", " y='" & newval & "'")
+  end if
+
+  '*** write to the output file
+   fw.WriteLine newLine
+
+Loop
+
+'*** close the files
+fr.Close
+fw.close
+
+'*** prompt done
+msgbox "Resize Complete and saved as "& chr(13) & chr(13) & OutputFileName,vbOkOnly,"Done"
+
+
+Function OpenFile()
+Set wShell=CreateObject("WScript.Shell")
+Set oExec=wShell.Exec("mshta.exe ""about:<input type=file id=FILE><script>FILE.click();new ActiveXObject('Scripting.FileSystemObject').GetStandardStream(1).WriteLine(FILE.value);close();resizeTo(0,0);</script>""")
+sFileSelected = oExec.StdOut.ReadLine
+OpenFile = sFileSelected
+End Function
